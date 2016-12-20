@@ -1,13 +1,17 @@
 package it.matteoavanzini.ai.fastforward;
 
-public class BackPropagation extends FastForward implements NeuralBackPropagation {
+public abstract class BackPropagation extends FastForward implements NeuralBackPropagation {
 	
 	private final double ¢ = 0.001;
-	/** derivata nascosto */
-    private double[] dN = new double [LUNGHEZZA_NASCOSTO];
-    /** derivata output */
-    private double[] dO = new double [LUNGHEZZA_OUTPUT];
+	protected double [][][] vecchiPesi;
+	private double[][] derivate = new double[0][];
 
+	public BackPropagation(Integer...strati) {
+        super(strati);
+        derivate = new double[strati.length][];
+        vecchiPesi = pesi;
+    }
+	
 	/**
      * @param ŋ         costante di apprendimento
      * @param errors    un array lungo quanto l'output che contiene per ciascun
@@ -17,36 +21,80 @@ public class BackPropagation extends FastForward implements NeuralBackPropagatio
 	@Override
     public void backPropagation(double ŋ, double µ, double [] errors) {
 
-		int lunghezzaPrimoStrato = strati[0];
-		int lunghezzaUltimoStrato = strati[strati.length-1];
-        double [] bpe1 = new double[LUNGHEZZA_NASCOSTO];
-        double [] bpe2 = new double[lunghezzaUltimoStrato];
-        // STEP 2: backpropagation to the output layer:
-        for (int i=0; i<lunghezzaUltimoStrato; i++) {
-            bpe2[i] = (dO[i]+¢)*errors[i];
+		int indiceUltimoStrato = strati.length-1;
+		double [][] backPropagationError = new double[strati.length-1][];
+        
+		// STEP 1: calcolo del backPropagationError
+        for (int indiceStratoCorrente=indiceUltimoStrato; indiceStratoCorrente>0; indiceStratoCorrente--) {
+        		int lunghezzaStratoCorrente = strati[indiceStratoCorrente];
+        		int lunghezzaStratoPrecedente = strati[indiceStratoCorrente-1];
+        		
+        		backPropagationError[indiceStratoCorrente-1] = new double[lunghezzaStratoCorrente];
+        		
+        		if (indiceStratoCorrente == indiceUltimoStrato) {
+	        			for (int i=0; i<lunghezzaStratoCorrente; i++) {
+	        				backPropagationError[indiceStratoCorrente-1][i] = (derivate[indiceUltimoStrato][i]+¢)*errors[i];
+	        			}
+        		} else {
+        				for (int i=0; i<lunghezzaStratoCorrente; i++) {
+        		            double somma = 0;
+        		            for (int j=0; j<lunghezzaStratoPrecedente; j++) {
+        		                somma += backPropagationError[indiceStratoCorrente-1][j]*pesi[indiceStratoCorrente][i][j];
+        		            }
+        		            backPropagationError[indiceStratoCorrente][i] = (derivate[indiceStratoCorrente][i]+¢)*somma;
+        		        }
+        		}
+        
         }
-        // STEP 3: backpropagation to the hidden layer:
-        for (int i=0; i<LUNGHEZZA_NASCOSTO; i++) {
-            double somma = 0;
-            for (int j=0; j<lunghezzaUltimoStrato; j++) {
-                somma += bpe2[j]*w2[i][j];
+        
+        // STEP 2: aggiornamento dei pesi
+        for (int indiceStratoCorrente = indiceUltimoStrato-1; indiceStratoCorrente>=0; indiceStratoCorrente--) {
+	        
+        		int lunghezzaStratoCorrente = strati[indiceStratoCorrente];
+        		int lunghezzaStratoSuccessivo = strati[indiceStratoCorrente + 1];
+        		
+            for (int i=0; i<lunghezzaStratoCorrente; i++) {
+                for (int j=0; j<lunghezzaStratoSuccessivo; j++) {
+                    double delta = ŋ*sigma[lunghezzaStratoCorrente][i]*backPropagationError[indiceStratoCorrente][j];
+                    pesi[indiceStratoCorrente][i][j] -= delta+(µ*vecchiPesi[indiceStratoCorrente][i][j]);
+                    vecchiPesi[indiceStratoCorrente][i][j] = delta;
+                }
             }
-            bpe1[i] = (dN[i]+¢)*somma;
         }
-        // STEP 4: weight updates:
-        for (int i=0; i<LUNGHEZZA_NASCOSTO; i++) {
-            for (int j=0; j<lunghezzaUltimoStrato; j++) {
-                double delta = ŋ*sN[i]*bpe2[j];
-                w2[i][j] -= delta+(µ*oldW2[i][j]);
-                oldW2[i][j] = delta;
-            }
+
+    }
+	
+	@Override
+	protected double[] feedForward(double [] inputs) {
+
+        double [][] somme = new double[strati.length][0];
+        
+        somme[0] = inputs;
+        for (int i=1; i<strati.length; i++) {
+        		int dimension = strati[i] + 1;
+        		if (i==strati.length-1) dimension = strati[i];
+        		somme[i] = new double[dimension];
+        		derivate[i] = new double[dimension];
         }
-        for (int i=0; i<lunghezzaPrimoStrato; i++) {
-            for (int j=0; j<LUNGHEZZA_NASCOSTO; j++) {
-                double delta = ŋ*sI[i]*bpe1[j];
-                w1[i][j] -= delta+(µ*oldW1[i][j]);
-                oldW1[i][j] = delta;
-            }
+
+        for (int strato = 0; strato<strati.length-1; strato++) {
+        		sigma[strato] = new double[pesi[strato].length];
+	        	for (int i=0; i<pesi[strato].length; i++) {
+	        		sigma[strato][i] = (i==pesi[strato].length-1) ? BIAS : sigma(somme[strato][i]);
+	        		
+	        		int dimension = strati[strato+1];
+	        		for (int j=0; j<dimension; j++) {
+	        			somme[strato+1][j] += ( sigma[strato][i]*pesi[strato][i][j] ) ; 
+	        		}
+	        	}
         }
+        
+        int indiceUltimoStrato = strati.length-1;
+        for (int i=0; i<strati[indiceUltimoStrato]; i++) {
+        		somme[indiceUltimoStrato][i] = sigma(somme[indiceUltimoStrato][i]);
+        		derivate[indiceUltimoStrato][i] = derivata(somme[indiceUltimoStrato][i]);
+        }
+        
+        return somme[strati.length-1];
     }
 }
